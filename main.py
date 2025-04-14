@@ -19,12 +19,23 @@ from torch.nn import MultiheadAttention as MHAtten
 from torch.nn.functional import normalize as norm
 import re
 
-data = "/x/sent"
+data = "sent"
 learning_rate = 0.2
 word_re = re.compile("^(\\d+)\t([^\\t]+)\\t([^\\t]+)\\t([A-Z]+)\\t(.*)$")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Device ", device)
+
+def compare(pred, target):
+    if pred.shape != target.shape:
+        raise BaseException("Shape mismatch")
+    match_count = 0
+    for p, t in zip(pred, target):
+        p_max = p.topk(1).indices[0]
+        t_max = t.topk(1).indices[0]
+        if p_max == t_max:
+            match_count = match_count + 1
+    return float(match_count) / len(target)
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, file_name):
@@ -103,16 +114,17 @@ m = Model(len(d.dict), 512, 512, len(d.pos_dict), 8).to(device)
 loss_fn = nn.MSELoss()
 opt = torch.optim.SGD(m. parameters(), lr=learning_rate)
 
-train_set, test_set = torch.utils.data.random_split(d, [.85, .15], generator=torch.Generator(device=device).manual_seed(2024))
+train_set, test_set = torch.utils.data.random_split(d, [.85, .15], generator=torch.Generator(device="cpu").manual_seed(2024))
 
 step = 0
 for input, target in train_set:
-    pred = m(input)
-    loss = loss_fn(pred, target)
-    if step % 50 == 0:
-        print(loss)
+    pred = m(input.to(device))
+    loss = loss_fn(pred, target.to(device))
+    if step % 1000 == 0:
+        #print(loss)
+        print(compare(pred.to("cpu"), target) * 100)
     loss.backward()
-    #nn.utils.clip_grad_norm_(m.parameters(), 3)
+    nn.utils.clip_grad_norm_(m.parameters(), 3)
     opt.step()
     opt.zero_grad()
     step = step + 1
