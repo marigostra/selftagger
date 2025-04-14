@@ -18,11 +18,14 @@ import torch.nn as nn
 from torch.nn import MultiheadAttention as MHAtten
 import re
 
-
 word_re = re.compile("^(\\d+)\t([^\\t]+)\\t([^\\t]+)\\t([A-Z]+)\\t(.*)$")
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, file_name):
+        self.dict = []
+        self.dict_map = dict()
+        self.pos_dict = []
+        self.pos_dict_map = dict()
         self.sents = []
         self.words = []
         with open(file_name) as f:
@@ -42,25 +45,36 @@ class Dataset(torch.utils.data.Dataset):
             r = word_re.match(l)
             if not r:
                 continue
-            words.append(r.group(2))
+            word = r.group(2)
+            lemma = r.group(3)
+            pos = r.group(4)
+            if not word in self.dict_map.keys():
+                self.dict.append(word)
+                self.dict_map[word] = len(self.dict) - 1
+            if not pos in self.pos_dict_map.keys():
+                self.pos_dict.append(pos)
+                self.pos_dict_map[pos] = len(self.pos_dict) - 1
+            words.append({word: self.dict_map[word]})
             assert len(words) == int(r.group(1)), str(len(words)) + " not equals " + r.group(1)
         assert len(self.sents) == len(self.words)
 
 class Model(nn.Module):
-    def __init__(self, input_dim, output_dim, num_heads):
+    def __init__(self, dict_size, embed_dim, atten_dim, num_heads):
         super().__init__()
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.num_heads = num_heads
-        self.ln_query = nn.Linear(self.input_dim, self.output_dim)
-        self.ln_key = nn.Linear(self.input_dim, self.output_dim)
-        self.ln_value = nn.Linear(self.input_dim, self.output_dim)
-        self.atten = MHAtten(self.output_dim, self.num_heads)
+        self.embed = nn.Embedding(dict_size, embed_dim)
+        self.ln_query = nn.Linear(embed_dim, atten_dim)
+        self.ln_key = nn.Linear(embed_dim, atten_dim)
+        self.ln_value = nn.Linear(embed_dim, atten_dim)
+        self.atten = MHAtten(atten_dim, num_heads)
 
     def forward(self, x):
-        q = self.ln_query(x)
-        k = self.ln_key(x)
-        v = self.ln_value(x)
+        e = self.embed(x)
+        q = self.ln_query(e)
+        k = self.ln_key(e)
+        v = self.ln_value(e)
         return self.atten(q, k, v)        
 
-m = Model(128, 64, 8)
+d = Dataset("/x/sent")
+for i in d.pos_dict_map.values():
+    print(i)
+#m = Model(128, 64, 8)
