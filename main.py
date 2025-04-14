@@ -21,6 +21,7 @@ import re
 
 data = "sent"
 learning_rate = 0.2
+epochs = 50
 word_re = re.compile("^(\\d+)\t([^\\t]+)\\t([^\\t]+)\\t([A-Z]+)\\t(.*)$")
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -109,22 +110,27 @@ class Model(nn.Module):
         atten, atten_weight = self.atten(q, k, v)        
         return norm(self.ln_pos(atten), p=1, dim=1)
 
+def train(m, train_set, loss_fn, opt):
+    step = 0
+    matching_sum = 0.0
+    for input, target in train_set:
+        pred = m(input.to(device))
+        loss = loss_fn(pred, target.to(device))
+        matching = compare(pred.to("cpu"), target) * 100
+        matching_sum = matching_sum + matching
+        loss.backward()
+        nn.utils.clip_grad_norm_(m.parameters(), 3)
+        opt.step()
+        opt.zero_grad()
+        step = step + 1
+    return matching_sum / step 
+
 d = Dataset(data)
-m = Model(len(d.dict), 512, 512, len(d.pos_dict), 8).to(device)
+train_set, test_set = torch.utils.data.random_split(d, [.85, .15], generator=torch.Generator(device="cpu").manual_seed(2024))
+m = Model(len(d.dict), 1024, 1024, len(d.pos_dict), 8).to(device)
 loss_fn = nn.MSELoss()
 opt = torch.optim.SGD(m. parameters(), lr=learning_rate)
 
-train_set, test_set = torch.utils.data.random_split(d, [.85, .15], generator=torch.Generator(device="cpu").manual_seed(2024))
-
-step = 0
-for input, target in train_set:
-    pred = m(input.to(device))
-    loss = loss_fn(pred, target.to(device))
-    if step % 1000 == 0:
-        #print(loss)
-        print(compare(pred.to("cpu"), target) * 100)
-    loss.backward()
-    nn.utils.clip_grad_norm_(m.parameters(), 3)
-    opt.step()
-    opt.zero_grad()
-    step = step + 1
+for i in range(epochs):
+    print("Epoch ", i)
+    print(train(m, train_set, loss_fn, opt))
